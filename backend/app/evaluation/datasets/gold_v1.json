@@ -1,0 +1,156 @@
+{
+  "dataset": "gold_v1",
+  "version": "1.0.0",
+  "license": "CC0-1.0",
+  "synthetic": true,
+  "notice": "IMPORTANT: every case below is a SYNTHETIC fixture written for this repository. The studies, drugs, cohorts, registration numbers, funders and results are invented. Nothing here is a real trial, and no number in this file should be cited as a clinical finding. The fixtures exist so the evaluation harness has ground truth that can be redistributed freely and that exercises the abstain path (cases 2-4 deliberately omit fields). To evaluate against real literature, replace this file with your own annotations over papers you have the right to use; the schema is documented in app/evaluation/runner.py.",
+  "annotation_guide": "gold values are written as a competent reviewer would type them into an evidence table. null means 'the paper does not report this' - a system that answers a null field is hallucinating. gold_evidence maps a field to a phrase that MUST appear in a retrieved chunk for retrieval to count as successful.",
+  "cases": [
+    {
+      "id": "gold-001",
+      "design_family": "rct",
+      "title": "Effect of low-dose oral tenavastin on 12-month cardiovascular events in adults with stage 2 chronic kidney disease: a multicentre, double-blind, randomised controlled trial",
+      "journal": "Synthetic Journal of Evidence Methods",
+      "year": 2023,
+      "text": "Effect of low-dose oral tenavastin on 12-month cardiovascular events in adults with stage 2 chronic kidney disease: a multicentre, double-blind, randomised controlled trial\n\nBackground\nAdults with stage 2 chronic kidney disease remain at elevated cardiovascular risk despite guideline-directed therapy. Whether adding a low-dose lipid-modifying agent reduces that risk is unresolved.\n\nMethods\nWe conducted a multicentre, double-blind, randomised controlled trial at 18 hospitals in the United Kingdom and Ireland. A total of 1,204 patients with stage 2 chronic kidney disease were randomly assigned (1:1) to receive low-dose oral tenavastin 5 mg once daily or matching placebo. Participants were eligible if they were aged 45 to 80 years and had an estimated glomerular filtration rate of 60 to 89 mL/min/1.73 m2. Exclusion criteria included prior myocardial infarction within 6 months and active malignancy. The primary outcome was the first occurrence of a major adverse cardiovascular event, assessed at 12 months. The mean age was 63.4 years (SD 8.1) and 41.2 % were female. The trial is registered with ClinicalTrials.gov, NCT04812277.\n\nResults\nOver a median follow-up of 12.4 months, the primary outcome occurred in 84 of 602 patients (14.0 %) in the tenavastin group and in 118 of 602 patients (19.6 %) in the placebo group (hazard ratio 0.69, 95% CI 0.52 to 0.91, p = 0.009). All-cause mortality did not differ between groups (risk ratio 0.94, 95% CI 0.71 to 1.24, p = 0.66). Serious adverse events were reported in 7.1 % versus 6.8 % of participants (p = 0.82).\n\nDiscussion\nThe effect size was consistent across prespecified subgroups. Our study has several limitations: follow-up was limited to 12 months, and the trial population was predominantly of European ancestry, which limits generalisability.\n\nConclusion\nIn conclusion, low-dose tenavastin reduced major adverse cardiovascular events over 12 months in adults with stage 2 chronic kidney disease.\n\nFunding\nThis trial was funded by the Northfield Renal Research Foundation.\n",
+      "gold": {
+        "pico.population": "patients with stage 2 chronic kidney disease",
+        "pico.intervention": "low-dose oral tenavastin 5 mg once daily",
+        "pico.comparison": "matching placebo",
+        "pico.outcome": "first occurrence of a major adverse cardiovascular event, assessed at 12 months",
+        "design.design": "randomised controlled trial",
+        "design.randomised": "yes",
+        "design.blinding": "double-blind",
+        "design.setting": "multicentre, 18 hospitals in the United Kingdom and Ireland",
+        "design.duration": "12.4 months",
+        "design.registration_id": "NCT04812277",
+        "population.sample_size": "1204",
+        "population.age": "63.4",
+        "population.sex_distribution": "41.2 % female",
+        "population.inclusion_criteria": "aged 45 to 80 years and estimated glomerular filtration rate of 60 to 89 mL/min/1.73 m2",
+        "population.exclusion_criteria": "prior myocardial infarction within 6 months and active malignancy",
+        "limitations": "follow-up was limited to 12 months, and the trial population was predominantly of European ancestry",
+        "conclusion": "low-dose tenavastin reduced major adverse cardiovascular events over 12 months",
+        "funding": "Northfield Renal Research Foundation"
+      },
+      "gold_evidence": {
+        "population.sample_size": "A total of 1,204 patients with stage 2 chronic kidney disease",
+        "design.registration_id": "NCT04812277",
+        "pico.outcome": "The primary outcome was the first occurrence",
+        "limitations": "follow-up was limited to 12 months",
+        "conclusion": "In conclusion, low-dose tenavastin reduced"
+      },
+      "gold_outcomes": [
+        {"effect_size": "0.69", "p_value": "0.009"},
+        {"effect_size": "0.94", "p_value": "0.66"}
+      ]
+    },
+    {
+      "id": "gold-002",
+      "design_family": "cohort",
+      "title": "Association between early mobilisation and 90-day functional recovery after elective hip arthroplasty: a prospective cohort study",
+      "journal": "Synthetic Journal of Evidence Methods",
+      "year": 2022,
+      "text": "Association between early mobilisation and 90-day functional recovery after elective hip arthroplasty: a prospective cohort study\n\nBackground\nEarly mobilisation after elective hip arthroplasty is widely recommended, but observational evidence on functional recovery is mixed.\n\nMethods\nWe conducted a prospective cohort study at a single-centre orthopaedic unit in Auckland. We enrolled 486 consecutive adults undergoing elective primary hip arthroplasty between March 2019 and August 2021. Participants were eligible if they were aged 50 years or older and were able to walk 10 metres unaided before surgery. Exclusion criteria included revision arthroplasty and pre-existing neurological impairment. Patients were grouped by whether mobilisation began within 24 hours of surgery or later, and outcomes were compared between the two groups. The primary outcome was the Oxford Hip Score at 90 days. The mean age was 71.2 years (SD 9.4) and 58.0 % were female. Follow-up was for 90 days after surgery.\n\nResults\nEarly mobilisation was associated with a higher 90-day Oxford Hip Score (mean difference 4.1 points, 95% CI 1.8 to 6.4, p = 0.001). The rate of readmission within 90 days was 6.2 % versus 9.4 % (p = 0.14). No difference was observed in 90-day mortality.\n\nDiscussion\nThis is an observational study and residual confounding by baseline fitness cannot be excluded. A further limitation is that mobilisation timing was recorded by the treating team rather than by an independent assessor.\n\nConclusion\nThese findings suggest that mobilisation within 24 hours of elective hip arthroplasty is associated with better 90-day function, but a randomised trial is required.\n",
+      "gold": {
+        "pico.population": "adults undergoing elective primary hip arthroplasty",
+        "pico.intervention": "mobilisation begun within 24 hours of surgery",
+        "pico.comparison": "mobilisation begun later than 24 hours",
+        "pico.outcome": "Oxford Hip Score at 90 days",
+        "design.design": "prospective cohort study",
+        "design.randomised": null,
+        "design.blinding": null,
+        "design.setting": "single-centre orthopaedic unit in Auckland",
+        "design.duration": "90 days",
+        "design.registration_id": null,
+        "population.sample_size": "486",
+        "population.age": "71.2",
+        "population.sex_distribution": "58.0 % female",
+        "population.inclusion_criteria": "aged 50 years or older and able to walk 10 metres unaided before surgery",
+        "population.exclusion_criteria": "revision arthroplasty and pre-existing neurological impairment",
+        "limitations": "residual confounding by baseline fitness cannot be excluded",
+        "conclusion": "mobilisation within 24 hours is associated with better 90-day function",
+        "funding": null
+      },
+      "gold_evidence": {
+        "population.sample_size": "We enrolled 486 consecutive adults",
+        "design.design": "prospective cohort study",
+        "pico.outcome": "The primary outcome was the Oxford Hip Score at 90 days",
+        "limitations": "residual confounding by baseline fitness cannot be excluded"
+      },
+      "gold_outcomes": [
+        {"effect_size": "4.1", "p_value": "0.001"}
+      ]
+    },
+    {
+      "id": "gold-003",
+      "design_family": "meta_analysis",
+      "title": "Digital cognitive behavioural therapy for insomnia in shift workers: a systematic review and meta-analysis of randomised trials",
+      "journal": "Synthetic Journal of Evidence Methods",
+      "year": 2024,
+      "text": "Digital cognitive behavioural therapy for insomnia in shift workers: a systematic review and meta-analysis of randomised trials\n\nBackground\nShift workers report insomnia at roughly twice the rate of day workers, and access to in-person therapy is limited.\n\nMethods\nWe conducted a systematic review and meta-analysis of randomised trials. We searched MEDLINE, Embase and CENTRAL from inception to 31 January 2024. Trials were eligible if they randomised adult shift workers to digital cognitive behavioural therapy for insomnia or to a control condition, and reported a validated insomnia severity measure. Exclusion criteria included trials of pharmacological co-interventions and trials reported only as conference abstracts. Fourteen trials with 3,417 participants were included. The primary outcome was change in Insomnia Severity Index score at end of treatment. The review protocol is registered with PROSPERO, CRD42023441028.\n\nResults\nDigital cognitive behavioural therapy reduced Insomnia Severity Index scores compared with control (mean difference -4.8 points, 95% CI -6.1 to -3.5, p < 0.001). Heterogeneity was moderate. Effects on daytime sleepiness were smaller and did not reach significance (mean difference -1.1 points, 95% CI -2.4 to 0.2, p = 0.09).\n\nDiscussion\nOur review has several limitations. Most included trials were small and only three reported outcomes beyond 12 weeks, so durability of benefit is uncertain.\n\nConclusion\nWe conclude that digital cognitive behavioural therapy produces a moderate short-term reduction in insomnia severity among shift workers.\n\nFunding\nThis review was supported by a grant from the Kirrawee Occupational Health Trust.\n",
+      "gold": {
+        "pico.population": "adult shift workers with insomnia",
+        "pico.intervention": "digital cognitive behavioural therapy for insomnia",
+        "pico.comparison": "control condition",
+        "pico.outcome": "change in Insomnia Severity Index score at end of treatment",
+        "design.design": "systematic review / meta-analysis",
+        "design.randomised": null,
+        "design.blinding": null,
+        "design.setting": null,
+        "design.duration": null,
+        "design.registration_id": "CRD42023441028",
+        "population.sample_size": "3417",
+        "population.age": null,
+        "population.sex_distribution": null,
+        "population.inclusion_criteria": "randomised adult shift workers to digital cognitive behavioural therapy for insomnia or to a control condition and reported a validated insomnia severity measure",
+        "population.exclusion_criteria": "trials of pharmacological co-interventions and trials reported only as conference abstracts",
+        "limitations": "most included trials were small and only three reported outcomes beyond 12 weeks",
+        "conclusion": "digital cognitive behavioural therapy produces a moderate short-term reduction in insomnia severity",
+        "funding": "Kirrawee Occupational Health Trust"
+      },
+      "gold_evidence": {
+        "population.sample_size": "Fourteen trials with 3,417 participants were included",
+        "design.registration_id": "CRD42023441028",
+        "conclusion": "We conclude that digital cognitive behavioural therapy"
+      },
+      "gold_outcomes": [
+        {"effect_size": "-4.8", "p_value": "0.001"},
+        {"effect_size": "-1.1", "p_value": "0.09"}
+      ]
+    },
+    {
+      "id": "gold-004",
+      "design_family": "sparse_abstract",
+      "title": "Serum ferritin and post-operative delirium in older surgical patients: a case-control study",
+      "journal": "Synthetic Journal of Evidence Methods",
+      "year": 2021,
+      "text": "Serum ferritin and post-operative delirium in older surgical patients: a case-control study\n\nAbstract\nPost-operative delirium is common in older surgical patients and its biochemical correlates are poorly characterised. We performed a case-control study comparing pre-operative serum ferritin in patients who developed post-operative delirium and in matched controls who did not. Cases and controls were drawn from a hospital surgical registry. Median pre-operative ferritin was higher among cases than controls (182 ng/mL versus 141 ng/mL, p = 0.03). The association persisted after adjustment for age and surgical duration. Further prospective work is required before ferritin can be considered a useful marker.\n",
+      "gold": {
+        "pico.population": "older surgical patients",
+        "pico.intervention": null,
+        "pico.comparison": "matched controls who did not develop post-operative delirium",
+        "pico.outcome": null,
+        "design.design": "case-control study",
+        "design.randomised": null,
+        "design.blinding": null,
+        "design.setting": null,
+        "design.duration": null,
+        "design.registration_id": null,
+        "population.sample_size": null,
+        "population.age": null,
+        "population.sex_distribution": null,
+        "population.inclusion_criteria": null,
+        "population.exclusion_criteria": null,
+        "limitations": null,
+        "conclusion": "further prospective work is required before ferritin can be considered a useful marker",
+        "funding": null
+      },
+      "gold_evidence": {
+        "design.design": "We performed a case-control study",
+        "conclusion": "Further prospective work is required"
+      },
+      "gold_outcomes": []
+    }
+  ]
+}

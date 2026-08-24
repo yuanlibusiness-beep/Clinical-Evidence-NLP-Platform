@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  backend:
+    name: Backend (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the declared floor; 3.12 is what the Docker image ships.
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        working-directory: backend
+        run: ruff check app tests
+
+      - name: Test
+        working-directory: backend
+        run: pytest -q --cov=app --cov-report=term-missing
+
+      # The evaluation harness runs in CI on purpose: it exercises ingestion,
+      # retrieval, extraction, grounding and calibration end to end, and the
+      # gate below fails the build if the pipeline starts inventing answers.
+      - name: Evaluate the offline baseline
+        working-directory: backend
+        env:
+          ENVIRONMENT: ci
+          DATABASE_URL: sqlite:///./data/ci.db
+        run: python -m app.evaluation.runner --name "ci baseline" --rule-engine --json | tee eval.json
+
+      - name: Enforce quality gates
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import json, sys
+
+          metrics = json.load(open("eval.json"))
+          extraction = metrics["extraction"]
+          retrieval = metrics["retrieval"]
+
+          gates = [
+              ("hallucination_rate", extraction["hallucination_rate"], "<=", 0.05),
+              ("grounded_ratio",     extraction["grounded_ratio"],     ">=", 1.00),
+              ("precision",          extraction["precision"],          ">=", 0.80),
+              ("recall@3",           retrieval["recall@3"],            ">=", 0.70),
+          ]
+
+          failed = []
+          for name, value, op, bound in gates:
+              ok = value <= bound if op == "<=" else value >= bound
+              print(f"{'PASS' if ok else 'FAIL'}  {name:20} {value:.3f} {op} {bound}")
+              if not ok:
+                  failed.append(name)
+
+          if failed:
+              sys.exit(f"Quality gates failed: {', '.join(failed)}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-metrics-py${{ matrix.python-version }}
+          path: backend/eval.json
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

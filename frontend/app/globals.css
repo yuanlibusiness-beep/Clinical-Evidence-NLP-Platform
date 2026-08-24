@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-50 text-ink-800 antialiased;
+  }
+
+  ::selection {
+    @apply bg-accent-soft text-ink-900;
+  }
+
+  /* Visible focus everywhere — the evidence table is keyboard-navigated. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-ink-50;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-ink-200 bg-white shadow-sm;
+  }
+
+  .card-header {
+    @apply flex items-baseline justify-between gap-3 border-b border-ink-100 px-5 py-3;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2
+           text-sm font-medium transition-colors disabled:cursor-not-allowed
+           disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-indigo-700;
+  }
+
+  .btn-secondary {
+    @apply btn border border-ink-300 bg-white text-ink-700 hover:bg-ink-100;
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-ink-100;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm
+           text-ink-900 placeholder:text-ink-400 focus:border-accent;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+
+  /* The three epistemic states the whole UI is built around. */
+  .chip-grounded {
+    @apply chip bg-grounded-soft text-teal-800;
+  }
+
+  .chip-partial {
+    @apply chip bg-partial-soft text-amber-800;
+  }
+
+  .chip-abstained {
+    @apply chip bg-abstained-soft text-ink-500;
+  }
+
+  .quote {
+    @apply border-l-2 border-grounded-ring bg-ink-50 px-3 py-2 text-[13px]
+           leading-relaxed text-ink-600;
+  }
+
+  .table-row {
+    @apply border-b border-ink-100 last:border-0;
+  }
+
+  .skeleton {
+    @apply animate-pulse-soft rounded bg-ink-200;
+  }
+}
+
+/* The highlighted evidence span inside the source reader. */
+.evidence-highlight {
+  @apply rounded bg-partial-soft px-0.5 ring-1 ring-partial-ring;
+}
+
+.evidence-highlight-active {
+  @apply rounded bg-grounded-soft px-0.5 ring-2 ring-grounded;
+  scroll-margin-top: 6rem;
+}

@@ -1,0 +1,105 @@
+# Full stack: Postgres + pgvector, Redis, FastAPI, a Celery worker, and Next.js.
+#
+#   docker compose up --build
+#   frontend  http://localhost:3000
+#   API docs  http://localhost:8000/docs
+#
+# Nothing here needs an API key. Without LLM_API_KEY the extractor runs the
+# rule-based engine, so the whole stack is functional on first boot; add a key
+# to .env to switch the same pipeline onto a model.
+#
+# The api and worker services share one image and one codebase and differ only
+# in their command -- that is what keeps "it works in the API but not in the
+# worker" from being possible.
+
+name: clinical-evidence-nlp
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cenp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cenp}
+      POSTGRES_DB: ${POSTGRES_DB:-cenp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # The API waits for this, so a slow first boot cannot produce a
+      # connection-refused crash loop.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cenp} -d ${POSTGRES_DB:-cenp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend
+    environment: &backend_env
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DEBUG: ${DEBUG:-true}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cenp}:${POSTGRES_PASSWORD:-cenp}@db:5432/${POSTGRES_DB:-cenp}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.3-70b-versatile}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hashing}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
+      PUBMED_API_KEY: ${PUBMED_API_KEY:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-research@example.org}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - apidata:/app/data
+
+  worker:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    environment: *backend_env
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - apidata:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+volumes:
+  pgdata:
+  apidata:

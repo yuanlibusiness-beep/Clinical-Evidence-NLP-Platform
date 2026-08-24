@@ -1,0 +1,49 @@
+# ---- secrets -----------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- application data --------------------------------------------------
+backend/data/
+*.db
+*.sqlite3
+backend/eval.json
+
+# ---- node / next -------------------------------------------------------
+node_modules/
+.next/
+out/
+next-env.d.ts
+.eslintcache
+npm-debug.log*
+yarn-error.log*
+
+# ---- editors and os ----------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tsbuildinfo
+_setup/
+_notes/
+docs/zh/
