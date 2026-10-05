@@ -4,11 +4,14 @@ SHELL := /bin/bash
 PY  ?= python3
 PIP ?= $(PY) -m pip
 
-.PHONY: help setup backend frontend test lint typecheck eval eval-baseline calibrate up down logs clean
+.PHONY: help demo setup backend frontend test lint typecheck eval eval-baseline calibrate up down logs clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+demo: ## One command: install on first run, start API + UI
+	./scripts/start_demo.sh
 
 setup: ## Install backend + frontend dependencies for local development
 	cd backend && $(PIP) install -r requirements-dev.txt

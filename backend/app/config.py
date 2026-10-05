@@ -9,10 +9,11 @@ the whole surface testable via ``Settings(...)`` overrides.
 from __future__ import annotations
 
 import functools
-from typing import Literal
+import json
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -28,7 +29,12 @@ class Settings(BaseSettings):
     environment: Literal["local", "ci", "staging", "production"] = "local"
     debug: bool = True
     api_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # NoDecode: read the raw string from env/.env and let the validator below parse
+    # it, so both "http://a,http://b" and '["http://a"]' work.  Without it,
+    # pydantic-settings insists on JSON and the README's own .env crashes on boot.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     # ------------------------------------------------------------- security
     # NOTE: the default is deliberately obvious.  ``check_production_safety``
@@ -104,7 +110,10 @@ class Settings(BaseSettings):
     @classmethod
     def _split_origins(cls, value):
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [item.strip() for item in text.split(",") if item.strip()]
         return value
 
     # ----------------------------------------------------------- helpers

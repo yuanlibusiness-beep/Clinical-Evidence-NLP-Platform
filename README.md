@@ -42,6 +42,20 @@ Two properties separate this from a "summarise my PDF" demo:
 so the whole pipeline — ingestion, retrieval, extraction, grounding, evaluation — works on a
 fresh clone.
 
+**One command** (needs Python 3.10+ and Node.js 18+). It creates `.env`, a virtualenv and
+`node_modules` on first run, starts both servers and opens the browser:
+
+```bash
+scripts\start_demo.bat        # Windows — or just double-click it
+./scripts/start_demo.sh        # macOS / Linux
+```
+
+Then create an account on the login page, open **Ingest**, paste the text of any paper (or one
+of the synthetic cases in `backend/app/evaluation/datasets/gold_v1.json`) and press
+**Extract evidence**.
+
+Or step by step:
+
 ```bash
 git clone https://github.com/<your-username>/clinical-evidence-nlp-platform.git
 cd clinical-evidence-nlp-platform
