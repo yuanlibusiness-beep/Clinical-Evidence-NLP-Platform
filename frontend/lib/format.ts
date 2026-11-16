@@ -99,6 +99,8 @@ export function explainAbstention(reason: string): string {
   switch (reason) {
     case "not_reported":
       return "The paper does not report this.";
+    case "not_found":
+      return "Not found — no matching statement was located in the text.";
     case "no_quote":
       return "Withheld — the engine gave no supporting quote.";
     case "ungrounded":
@@ -124,4 +126,44 @@ export function formatDate(iso: string): string {
 
 export function truncate(text: string, limit: number): string {
   return text.length <= limit ? text : `${text.slice(0, limit).trimEnd()}…`;
+}
+
+/** "Today", "Yesterday", or "9 Nov" (with the year when it is not this year). */
+export function shortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const now = new Date();
+  const days = Math.floor((now.setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+/** First number in a free-text estimate ("0.83", "HR 0.83", "-4.8 points"). */
+export function parseEstimate(text: string | null): number | null {
+  if (!text) return null;
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+/** "95% CI 0.75 to 0.93" / "0.75–0.93" / "(0.75, 0.93)" -> [0.75, 0.93]. */
+export function parseInterval(text: string | null): [number, number] | null {
+  if (!text) return null;
+  const numbers = text
+    .replace(/95\s*%/g, " ")
+    .match(/-?\d+(?:\.\d+)?/g)
+    ?.map(Number);
+  if (!numbers || numbers.length < 2) return null;
+  const [low, high] = numbers.slice(-2);
+  return low <= high ? [low, high] : [high, low];
+}
+
+/** Ratio measures are plotted on a log axis around 1; differences around 0. */
+export function isRatioMeasure(measure: string | null): boolean {
+  if (!measure) return false;
+  return /ratio|\b(hr|rr|or|irr)\b|relative risk/i.test(measure);
 }

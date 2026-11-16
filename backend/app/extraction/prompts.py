@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from app.schemas import RetrievedChunk
 
-PROMPT_VERSION = "v1.2.0"
+PROMPT_VERSION = "v1.3.0"
 
 SYSTEM_PROMPT = """\
 You are an evidence-extraction engine for clinical literature reviews. You read \
@@ -53,6 +53,12 @@ not your fluency:
    - 0.70-0.89: clearly stated but needs light normalisation (e.g. adding up arms).
    - 0.50-0.69: implied by the excerpt and a reasonable reader would agree.
    - below 0.50: uncertain - prefer null instead.
+
+5. ONE ROW PER RESULT. A paper states its main result up to three times \
+(abstract, results text, figure legend): report it once, quoting the results \
+text where possible. Never quote figure axes, at-risk tables or running headers. \
+A result restricted to part of the trial (e.g. "among patients receiving \
+mechanical ventilation") has kind "subgroup" and names the subgroup.
 
 Return only the JSON object. No prose, no markdown fence, no explanation.\
 """
@@ -86,7 +92,8 @@ Return exactly this JSON shape. Every "field" object is \
   "outcomes": [
     {
       "name": string,                    // what was measured
-      "kind": "primary"|"secondary"|"safety",
+      "kind": "primary"|"secondary"|"safety"|"subgroup", // subgroup = a result restricted to part of the trial
+
       "measure": string|null,            // hazard ratio, mean difference, ...
       "effect_size": string|null,
       "confidence_interval": string|null,

@@ -108,6 +108,8 @@ def detect_sections(raw_text: str, *, title: str | None = None) -> list[Detected
                 boundaries.append((offset, offset + len(line), name, stripped))
         offset += len(line)
 
+    boundaries, abstract_end = _fold_structured_abstract(raw_text, boundaries)
+
     sections: list[DetectedSection] = []
     order = 0
 
@@ -148,15 +150,101 @@ def detect_sections(raw_text: str, *, title: str | None = None) -> list[Detected
         body_end = (
             boundaries[index + 1][0] if index + 1 < len(boundaries) else len(raw_text)
         )
+        tail_start = None
+        if abstract_end is not None and body_start < abstract_end < body_end:
+            # The last abstract subsection stops at the abstract's end; what
+            # follows up to the next real heading is the unheaded introduction.
+            body_end, tail_start = abstract_end, abstract_end
         body = raw_text[body_start:body_end]
-        if not body.strip():
-            continue
-        sections.append(
-            DetectedSection(name, heading, order, body_start, body_end, body)
-        )
-        order += 1
+        if body.strip():
+            sections.append(
+                DetectedSection(name, heading, order, body_start, body_end, body)
+            )
+            order += 1
+        if tail_start is not None:
+            tail_end = (
+                boundaries[index + 1][0] if index + 1 < len(boundaries) else len(raw_text)
+            )
+            if raw_text[tail_start:tail_end].strip():
+                sections.append(
+                    DetectedSection(
+                        "background", None, order, tail_start, tail_end,
+                        raw_text[tail_start:tail_end],
+                    )
+                )
+                order += 1
 
     return sections
+
+
+_ABSTRACT_PARTS = {"background", "methods", "results", "conclusion"}
+_ABSTRACT_WINDOW = 8000
+_ABSTRACT_PART_MAX = 2500
+#: The end of an abstract's last paragraph: a sentence (or a closing
+#: parenthetical such as NEJM's "(Funded by ...; ClinicalTrials.gov number,
+#: NCT04381936.)") followed by a line break.
+_PARAGRAPH_END = re.compile(r"[.!?][)\]]?[ \t]*\n")
+
+
+def _fold_structured_abstract(
+    raw_text: str, boundaries: list[tuple]
+) -> tuple[list[tuple], int | None]:
+    """Relabel a structured abstract's sub-headings as ``abstract``.
+
+    NEJM, JAMA and BMJ abstracts carry BACKGROUND / METHODS / RESULTS /
+    CONCLUSIONS headings of their own.  Taken at face value they open real
+    sections, and the abstract's CONCLUSIONS then runs on through the unheaded
+    introduction until the paper's own Methods heading -- which is how an
+    introduction paragraph ended up quoted as the paper's conclusion.
+
+    A run is folded only when it is unambiguous: two or more abstract-type
+    headings near the top of the paper, each with a short body, and at least
+    one of Methods/Results heading the paper again later.
+    """
+    if len(boundaries) < 3:
+        return boundaries, None
+
+    start = 0
+    if boundaries[0][2] == "abstract":
+        start = 1
+    run_end = start
+    seen: set[str] = set()
+    while (
+        run_end < len(boundaries)
+        and boundaries[run_end][2] in _ABSTRACT_PARTS
+        and boundaries[run_end][2] not in seen  # a repeat is the paper's own heading
+        and boundaries[run_end][0] < _ABSTRACT_WINDOW
+    ):
+        seen.add(boundaries[run_end][2])
+        run_end += 1
+    run = boundaries[start:run_end]
+    if len(run) < 2:
+        return boundaries, None
+    later = {b[2] for b in boundaries[run_end:]}
+    if not ({"methods", "results"} & later):
+        return boundaries, None
+    # Every subsection but the last must be abstract-sized.
+    for index in range(start, run_end - 1):
+        if boundaries[index + 1][0] - boundaries[index][1] > _ABSTRACT_PART_MAX:
+            return boundaries, None
+
+    last_body = boundaries[run_end - 1][1]
+    next_heading = boundaries[run_end][0] if run_end < len(boundaries) else len(raw_text)
+    window_end = min(next_heading, last_body + _ABSTRACT_PART_MAX)
+    match = _PARAGRAPH_END.search(raw_text, last_body + 40, window_end)
+    abstract_end = match.end() if match else None
+    if abstract_end is None or abstract_end >= next_heading:
+        abstract_end = None
+
+    folded = list(boundaries)
+    for index in range(start, run_end):
+        h_start, body_start, name, heading = folded[index]
+        # The abstract's CONCLUSIONS paragraph *is* the authors' conclusion,
+        # and once trimmed at the abstract's end it is the cleanest statement
+        # of it in the paper -- so it keeps its label.
+        if name != "conclusion":
+            folded[index] = (h_start, body_start, "abstract", heading)
+    return folded, abstract_end
 
 
 def section_priority(section_name: str, field: str) -> float:
