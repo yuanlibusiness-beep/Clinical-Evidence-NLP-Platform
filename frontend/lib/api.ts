@@ -203,8 +203,8 @@ export const api = {
   // evaluation
   listEvalRuns: () => request<EvalRun[]>("/eval/runs"),
   getEvalRun: (id: string) => request<EvalRun>(`/eval/runs/${id}`),
-  runEval: (name: string, ruleEngine: boolean) =>
-    request<EvalRun>(`/eval/run?rule_engine=${ruleEngine}`, {
+  runEval: (name: string, ruleEngine: boolean, fitCalibration = false) =>
+    request<EvalRun>(`/eval/run?rule_engine=${ruleEngine}&fit_calibration=${fitCalibration}`, {
       method: "POST",
       body: JSON.stringify({ name, dataset: "gold_v1" }),
     }),

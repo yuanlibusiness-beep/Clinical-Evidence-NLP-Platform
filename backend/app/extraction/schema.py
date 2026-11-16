@@ -136,7 +136,9 @@ class Outcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str = Field(description="What was measured.")
-    kind: str = Field(default="primary", description="primary | secondary | safety")
+    kind: str = Field(
+        default="primary", description="primary | secondary | safety | subgroup"
+    )
     measure: str | None = Field(
         default=None, description="e.g. hazard ratio, mean difference, % responders"
     )
@@ -155,6 +157,8 @@ class Outcome(BaseModel):
         text = str(value or "primary").strip().lower()
         if "second" in text:
             return "secondary"
+        if "subgroup" in text or "sub-group" in text:
+            return "subgroup"
         if any(word in text for word in ("safety", "adverse", "harm")):
             return "safety"
         return "primary"

@@ -105,6 +105,25 @@ def _first_match(
     return None
 
 
+#: A noun phrase like "patients with stage 2 chronic kidney disease" ends where
+#: the clause's verb begins.  Regex captures run to the sentence end, so without
+#: this cut a population comes back as "... disease were randomly assigned (1:1)
+#: to receive ...", which is the right sentence but the wrong answer.
+_CLAUSE_VERB = re.compile(
+    # Not after "who"/"that": "patients who were hospitalized" is one phrase.
+    r"(?<!\bwho)(?<!\bthat)\s+(?:were|was|are|is|had|have|has|would|will|received|underwent|"
+    r"completed|provided|did|who\s+were\s+randomi[sz]ed)\b",
+    re.IGNORECASE,
+)
+
+
+def _trim_clause(value: str) -> str:
+    match = _CLAUSE_VERB.search(value)
+    if match and match.start() >= 8:
+        value = value[: match.start()]
+    return value.strip(" ,;:.")
+
+
 METHODS_FIRST = ("methods", "abstract", "results", "body")
 RESULTS_FIRST = ("results", "abstract", "methods", "body")
 ABSTRACT_FIRST = ("abstract", "methods", "results", "body")
@@ -129,7 +148,36 @@ _SAMPLE_PATTERNS = [
 ]
 
 
+#: "A total of 2104 patients were assigned to receive dexamethasone and 4321 to
+#: receive usual care" states the trial size only as two arms.  Reporting the
+#: first number alone halves the trial, so the two-arm form is tried first and
+#: summed.  The quote still carries both numbers, so the sum is checkable.
+_TWO_ARM_SAMPLE = re.compile(
+    r"\b(\d{1,3}(?:,\d{3})+|\d+)\s+(?:patients|participants|subjects|adults|"
+    r"women|men|children|individuals)\s+(?:were\s+)?(?:randomly\s+)?"
+    r"(?:assigned|allocated|randomi[sz]ed)\s+to\s+(?:receive\s+)?[^.;]{2,80}?"
+    r"\s+and\s+(\d{1,3}(?:,\d{3})+|\d+)\s+(?:patients\s+|participants\s+)?"
+    r"(?:were\s+)?(?:assigned\s+)?to\b",
+    re.IGNORECASE,
+)
+
+
+def _as_int(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
 def extract_sample_size(sentences: Sequence[Sentence]) -> RuleHit | None:
+    for sentence in _ordered(sentences, RESULTS_FIRST + ("methods",)):
+        match = _TWO_ARM_SAMPLE.search(sentence.text)
+        if match:
+            first, second = _as_int(match.group(1)), _as_int(match.group(2))
+            return RuleHit(
+                value=f"{first + second} ({first} + {second})",
+                quote=sentence.text,
+                confidence=0.80,
+                rule="sample_size_two_arm",
+            )
+
     def render(match: re.Match) -> str:
         for group in match.groups():
             if group and re.fullmatch(r"[\d,]+", group):
@@ -160,7 +208,9 @@ def extract_sample_size(sentences: Sequence[Sentence]) -> RuleHit | None:
 _AGE_PATTERNS = [
     re.compile(
         r"\b(?:mean|median|average)\s+age[^.]{0,25}?"
-        r"(\d{1,3}(?:\.\d+)?)\s*(?:years?)?\s*"
+        # "mean age was 1.1 years older among patients in the ... group" is a
+        # between-group difference, not the cohort's age.
+        r"(\d{1,3}(?:\.\d+)?)(?![\d.])\s*(?:years?)?(?!\s*(?:older|younger|higher|lower))\s*"
         r"(?:\(|±|\[|,)?\s*(?:SD|IQR|range)?[^.]{0,25}",
         re.IGNORECASE,
     ),
@@ -170,9 +220,18 @@ _AGE_PATTERNS = [
 ]
 
 
+#: A sentence comparing the arms' ages ("1.1 years older among patients in
+#: the dexamethasone group") contains an age-shaped number that is not an age.
+_AGE_COMPARISON = re.compile(
+    r"\b(?:years?\s+)?(?:older|younger)\s+(?:among|than|in)\b|\bage\s+difference\b",
+    re.IGNORECASE,
+)
+
+
 def extract_age(sentences: Sequence[Sentence]) -> RuleHit | None:
+    usable = [s for s in sentences if not _AGE_COMPARISON.search(s.text)]
     return _first_match(
-        sentences, _AGE_PATTERNS, METHODS_FIRST, confidence=0.74, rule="age"
+        usable, _AGE_PATTERNS, METHODS_FIRST, confidence=0.74, rule="age"
     )
 
 
@@ -214,6 +273,15 @@ _DESIGN_TERMS = [
     (r"\bobservational\s+study\b", "observational study", 0.75),
     (r"\bcase\s+series\b", "case series", 0.78),
 ]
+#: An RCT that never uses the word "randomised": "In this controlled,
+#: open-label trial ... we randomly assigned patients". Tried after the
+#: specific labels above, so a review or cluster trial still wins.
+_IMPLICIT_RCT = re.compile(
+    r"\btrial\b[^.]{0,240}\brandomly\s+(?:assigned|allocated)\b|"
+    r"\brandomly\s+(?:assigned|allocated)\b[^.]{0,240}\btrial\b",
+    re.IGNORECASE,
+)
+
 _DESIGN_COMPILED = [
     (re.compile(pattern, re.IGNORECASE), label, confidence)
     for pattern, label, confidence in _DESIGN_TERMS
@@ -221,10 +289,14 @@ _DESIGN_COMPILED = [
 
 
 def extract_design(sentences: Sequence[Sentence]) -> RuleHit | None:
-    for sentence in _ordered(sentences, ABSTRACT_FIRST):
+    ordered = _ordered(sentences, ABSTRACT_FIRST)
+    for sentence in ordered:
         for pattern, label, confidence in _DESIGN_COMPILED:
             if pattern.search(sentence.text):
                 return RuleHit(label, sentence.text, confidence, rule="design")
+    for sentence in ordered:
+        if sentence.section in ("abstract", "methods", "body") and _IMPLICIT_RCT.search(sentence.text):
+            return RuleHit("randomised controlled trial", sentence.text, 0.82, rule="design_implicit")
     return None
 
 
@@ -239,6 +311,7 @@ _RANDOMISED_PATTERNS = [
         r"\b(?:were|was)\s+random(?:ly|i[sz]ed)\s+(?:assigned|allocated)\b", re.IGNORECASE
     ),
     re.compile(r"\bwe\s+randomi[sz]ed\b", re.IGNORECASE),
+    re.compile(r"\bwe\s+randomly\s+(?:assigned|allocated)\b", re.IGNORECASE),
     re.compile(
         r"\brandomi[sz]ation\s+(?:was|were|sequence|list|schedule|ratio)\b", re.IGNORECASE
     ),
@@ -289,11 +362,12 @@ def extract_blinding(sentences: Sequence[Sentence]) -> RuleHit | None:
 
 _SETTING_PATTERNS = [
     re.compile(
-        r"\b(multi-?cent(?:re|er)|single-?cent(?:re|er))\b[^.]{0,80}", re.IGNORECASE
+        r"\b(?:at|in|across|from)\s+(\d{1,4})\s+(?:[A-Z]{2,5}\s+)?(?:\w+\s+)?"
+        r"(?:hospitals?|cent(?:re|er)s?|sites?|clinics?|villages?|practices)\b[^.;]{0,60}",
+        re.IGNORECASE,
     ),
     re.compile(
-        r"\bat\s+(\d{1,3})\s+(?:hospitals?|cent(?:re|er)s?|sites?|clinics?)\b[^.]{0,60}",
-        re.IGNORECASE,
+        r"\b(multi-?cent(?:re|er)|single-?cent(?:re|er))\b[^.]{0,80}", re.IGNORECASE
     ),
     re.compile(
         r"\b(?:conducted|performed|carried\s+out)\s+(?:in|at)\s+[^.]{5,90}",
@@ -363,6 +437,12 @@ def extract_registration(sentences: Sequence[Sentence]) -> RuleHit | None:
 
 # --------------------------------------------------------------------- PICO
 _POPULATION_PATTERNS = [
+    # The trial's own framing: "in patients who were hospitalized with Covid-19".
+    re.compile(
+        r"\b(?:patients?|participants?|adults?|children|women|men)\s+who\s+were\s+"
+        r"(?:hospitali[sz]ed|admitted|diagnosed|undergoing|receiving)\s+[^.,;]{3,100}",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"\b(?:patients?|participants?|adults?|children|women|men|subjects?)\s+"
         r"with\s+[^.]{5,110}",
@@ -384,16 +464,39 @@ _POPULATION_PATTERNS = [
 ]
 
 
+#: Sentences that mention patients without describing who was studied: funder
+#: disclaimers, power calculations, consent boilerplate.
+_NOT_A_POPULATION = re.compile(
+    r"\bno\s+role\b|\bpower\b|\bsample\s+size\b|\binformed\s+consent\b|"
+    r"\bethics\b|\bfunder|\bguidelines?\b",
+    re.IGNORECASE,
+)
+
+
 def extract_population(sentences: Sequence[Sentence]) -> RuleHit | None:
-    return _first_match(
-        sentences, _POPULATION_PATTERNS, METHODS_FIRST, confidence=0.66, rule="population"
+    usable = [s for s in sentences if not _NOT_A_POPULATION.search(s.text)]
+    hit = _first_match(
+        usable or sentences,
+        _POPULATION_PATTERNS,
+        METHODS_FIRST,
+        confidence=0.66,
+        rule="population",
+        render=lambda m: _trim_clause(m.group(0)),
     )
+    return hit
 
 
 _INTERVENTION_PATTERNS = [
+    # Only a *random* assignment defines the arm; "a total of 2104 patients were
+    # assigned to receive X and 4321 to receive Y" is a result sentence.
     re.compile(
-        r"\b(?:randomly\s+)?(?:assigned|allocated|randomi[sz]ed)\s+"
-        r"(?:\(1:1\)\s*)?to\s+(?:receive\s+)?[^.]{3,110}",
+        r"\b(?:randomly\s+(?:assigned|allocated)|randomi[sz]ed)\s+"
+        r"(?:(?:patients|participants)\s+)?(?:\(\d:\d\)\s*)?(?:in\s+a\s+\d:\d\s+ratio\s+)?"
+        r"to\s+(?:receive\s+)?([^.]{3,140})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:assigned|allocated)\s+(?:\(\d:\d\)\s*)?to\s+(?:receive\s+)?([^.]{3,110})",
         re.IGNORECASE,
     ),
     re.compile(
@@ -404,6 +507,25 @@ _INTERVENTION_PATTERNS = [
 ]
 
 
+#: Where the experimental arm's description stops and the comparator begins.
+#: Bare " or " is deliberately absent: "oral or intravenous dexamethasone" is
+#: one arm.
+_ARM_BOUNDARY = re.compile(
+    r"\s+(?:or\s+to\s+(?:receive\s+)?|or\s+(?:a\s+)?(?:matching\s+)?placebo\b|"
+    r"or\s+(?:usual|standard)\s+care\b|versus\s+|vs\.?\s+|compared\s+with\s+|"
+    r"and\s+[\d,]+\s+(?:patients\s+)?(?:were\s+)?(?:assigned\s+)?to\b)",
+    re.IGNORECASE,
+)
+
+
+def _arm(match: re.Match) -> str:
+    text = match.group(1) if match.groups() and match.group(1) else match.group(0)
+    cut = _ARM_BOUNDARY.search(text)
+    if cut:
+        text = text[: cut.start()]
+    return text.strip(" ,;:.")
+
+
 def extract_intervention(sentences: Sequence[Sentence]) -> RuleHit | None:
     return _first_match(
         sentences,
@@ -411,10 +533,24 @@ def extract_intervention(sentences: Sequence[Sentence]) -> RuleHit | None:
         METHODS_FIRST,
         confidence=0.68,
         rule="intervention",
+        render=_arm,
+        restrict_to=("methods", "abstract", "body"),
     )
 
 
 _COMPARISON_PATTERNS = [
+    # The comparator named in the allocation sentence itself:
+    # "... assigned to receive X or to receive usual care alone".
+    re.compile(
+        r"\b(?:assigned|allocated|randomi[sz]ed)\b[^.]{3,200}?\bor\s+to\s+receive\s+"
+        r"([^.,;()]{3,60})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:assigned|allocated|randomi[sz]ed)\b[^.]{3,200}?\bor\s+"
+        r"((?:a\s+)?(?:matching\s+)?placebo|(?:usual|standard)\s+care(?:\s+alone)?)",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:matching\s+)?placebo\b[^.]{0,80}", re.IGNORECASE),
     re.compile(
         r"\b(?:control|comparator|usual\s+care|standard\s+care|sham)\s+"
@@ -434,13 +570,23 @@ _COMPARISON_PATTERNS = [
 ]
 
 
+#: A sample-size paragraph names the control arm too ("the usual care group
+#: would provide a power of 90%") without defining it.
+_NOT_A_COMPARATOR = re.compile(
+    r"\bpower\b|\bsample\s+size\b|\bP\s+value\b|\bwould\s+provide\b",
+    re.IGNORECASE,
+)
+
+
 def extract_comparison(sentences: Sequence[Sentence]) -> RuleHit | None:
+    usable = [s for s in sentences if not _NOT_A_COMPARATOR.search(s.text)]
     return _first_match(
-        sentences,
+        usable or sentences,
         _COMPARISON_PATTERNS,
         METHODS_FIRST,
         confidence=0.66,
         rule="comparison",
+        render=lambda m: (m.group(1) if m.groups() and m.group(1) else m.group(0)),
         # A comparator is defined in Methods; a "versus" in Results is a result.
         restrict_to=("methods", "abstract", "body"),
     )
@@ -449,7 +595,7 @@ def extract_comparison(sentences: Sequence[Sentence]) -> RuleHit | None:
 _OUTCOME_PATTERNS = [
     re.compile(
         r"\b(?:the\s+)?(?:co-?)?primary\s+(?:outcome|endpoint|end\s+point)s?\s+"
-        r"(?:measures?\s+)?(?:was|were|is|are)\s+[^.]{3,140}",
+        r"(?:measures?\s+)?(?:was|were|is|are)\s+(?:the\s+)?([^.]{3,140})",
         re.IGNORECASE,
     ),
     re.compile(
@@ -465,12 +611,18 @@ def extract_primary_outcome(sentences: Sequence[Sentence]) -> RuleHit | None:
         METHODS_FIRST,
         confidence=0.80,
         rule="primary_outcome",
+        render=lambda m: m.group(1) if m.groups() and m.group(1) else m.group(0),
     )
 
 
 _INCLUSION_PATTERNS = [
     re.compile(r"\binclusion\s+criteria[^.]{0,160}", re.IGNORECASE),
     re.compile(r"\bwere\s+eligible\s+if\s+[^.]{5,140}", re.IGNORECASE),
+    re.compile(
+        r"\beligible\s+(?:for\s+(?:inclusion|enrol?ment|(?:the\s+)?(?:trial|study))\s+)"
+        r"if\s+[^.]{5,160}",
+        re.IGNORECASE,
+    ),
     re.compile(r"\beligible\s+if\s+they\s+[^.]{5,140}", re.IGNORECASE),
 ]
 _EXCLUSION_PATTERNS = [
@@ -496,7 +648,7 @@ def extract_exclusion(sentences: Sequence[Sentence]) -> RuleHit | None:
 #: that limitations follow ("Our study has several limitations.") and is
 #: therefore useless as a quote on its own -- see the look-ahead below.
 _LIMITATION_SUBSTANCE = re.compile(
-    r"\b(limitations?|limited\s+to|should\s+be\s+interpreted\s+with\s+caution|"
+    r"\b(limitations?|should\s+be\s+interpreted\s+with\s+caution|"
     r"residual\s+confounding|cannot\s+be\s+(?:excluded|ruled\s+out)|"
     r"limits?\s+generalisabilit|limits?\s+generalizabilit|"
     r"we\s+(?:could\s+not|were\s+unable\s+to)|small\s+sample\s+size|"
@@ -511,7 +663,10 @@ _LIMITATION_ANNOUNCEMENT = re.compile(
 
 
 def extract_limitations(sentences: Sequence[Sentence]) -> RuleHit | None:
-    ordered = _ordered(sentences, ("discussion", "conclusion", "body", "abstract"))
+    # Limitations are the authors' own appraisal, which lives in Discussion. A
+    # "limitation" word in Methods is almost always protocol detail.
+    pool = [s for s in sentences if s.section not in ("methods", "results", "references")]
+    ordered = _ordered(pool, ("discussion", "conclusion", "body", "abstract"))
     for position, sentence in enumerate(ordered):
         if not _LIMITATION_SUBSTANCE.search(sentence.text):
             continue
@@ -529,7 +684,7 @@ def extract_limitations(sentences: Sequence[Sentence]) -> RuleHit | None:
 
 
 _CONCLUSION_CUES = re.compile(
-    r"\b(in conclusion|we conclude|these (?:findings|results) suggest|"
+    r"\b(in conclusion|we conclude|these (?:findings|results) (?:suggest|show|indicate)|"
     r"this (?:study|trial) (?:shows|demonstrates|found)|taken together|"
     r"further\s+\w*\s*(?:work|research|studies|trials?|investigation)\s+"
     r"(?:is|are)\s+(?:required|needed|warranted))\b",
@@ -541,11 +696,14 @@ def extract_conclusion(sentences: Sequence[Sentence]) -> RuleHit | None:
     for sentence in _ordered(sentences, ("conclusion", "abstract", "discussion", "body")):
         if _CONCLUSION_CUES.search(sentence.text):
             return RuleHit(sentence.text, sentence.text, 0.76, rule="conclusion")
-    # Fall back to the last sentence of an explicit conclusion section.
+    # Fall back to the *first* sentence of an explicit conclusion section: a
+    # conclusion leads with its claim.  The last sentence is where a section
+    # that ran on past its end (an abstract's CONCLUSIONS bleeding into an
+    # unheaded introduction) is most wrong.
     conclusion_sentences = [s for s in sentences if s.section == "conclusion"]
     if conclusion_sentences:
-        last = conclusion_sentences[-1]
-        return RuleHit(last.text, last.text, 0.58, rule="conclusion_section")
+        first = conclusion_sentences[0]
+        return RuleHit(first.text, first.text, 0.58, rule="conclusion_section")
     return None
 
 
@@ -576,8 +734,8 @@ _EFFECT = re.compile(
     re.IGNORECASE,
 )
 _CI = re.compile(
-    r"\b95\s*%\s*(?:CI|confidence\s+interval)[,:\s]*[\[(]?\s*"
-    r"(-?\d+(?:\.\d+)?)\s*(?:to|-|–|—|,)\s*(-?\d+(?:\.\d+)?)\s*[\])]?",
+    r"\b95\s*%\s*(?:CI|confidence\s+interval)\s*(?:\[\s*CI\s*\]|\(\s*CI\s*\))?[,:\s]*"
+    r"[\[(]?\s*(-?\d+(?:\.\d+)?)\s*(?:to|-|–|—|,)\s*(-?\d+(?:\.\d+)?)\s*[\])]?",
     re.IGNORECASE,
 )
 _P_VALUE = re.compile(r"\bp\s*(<|>|=|≤|≥)\s*(0?\.\d+|\d+\.\d+(?:e-?\d+)?)", re.IGNORECASE)
@@ -590,18 +748,67 @@ _SAFETY_CUE = re.compile(
     r"\b(adverse\s+events?|serious\s+adverse|safety|toxicit|side\s+effects?|harms?)\b",
     re.IGNORECASE,
 )
+#: "among patients receiving invasive mechanical ventilation", "in the subgroup
+#: of women" -- a result restricted to part of the trial.
+_SUBGROUP = re.compile(
+    r"\b(?:among|in)\s+(?:those|patients|participants|the\s+subgroup\s+of)\s+"
+    r"(?:who\s+were\s+)?([^,;()]{4,80}?)(?=\s*\(|,|;|\s+and\s+among|\s+but\b|$)",
+    re.IGNORECASE,
+)
+_SUBGROUP_WORD = re.compile(r"\bsubgroups?\b", re.IGNORECASE)
+
+#: Discourse openers that were being promoted to outcome names ("However",
+#: "Overall", "In addition").
+_OPENER = re.compile(
+    r"^(?:however|overall|in\s+addition|additionally|moreover|furthermore|"
+    r"similarly|in\s+contrast|by\s+contrast|notably|importantly|thus|therefore)\b[,\s]*",
+    re.IGNORECASE,
+)
+_OUTCOME_NOUN = re.compile(
+    r"\b(?:\d+-day\s+|all-cause\s+|in-hospital\s+|cardiovascular\s+)?"
+    r"(mortality|death|survival|incidence\s+of\s+[^,.;()]{3,50}|risk\s+of\s+[^,.;()]{3,50}|"
+    r"rate\s+of\s+[^,.;()]{3,50}|hospitali[sz]ation|readmission|recurrence|"
+    r"remission|response|stroke|myocardial\s+infarction|infection|relapse)"
+    r"(?:\s+(?:at|within|by)\s+\d+\s+(?:days?|weeks?|months?|years?))?",
+    re.IGNORECASE,
+)
+
+
+def _is_figure_noise(text: str) -> bool:
+    """Figure axes and at-risk tables flattened into prose.
+
+    A Kaplan-Meier panel extracts as a long run of bare numbers ("4321 2104 3754
+    1903 3427 ..."), and it often contains the panel's own "Rate ratio, 0.83
+    (95% CI ...)" label -- so it passes every statistics test while being the
+    worst possible quote.  Real result sentences are mostly words.
+    """
+    tokens = text.split()
+    if len(tokens) < 12:
+        return False
+    numeric = sum(1 for token in tokens if re.fullmatch(r"[\d.,%()=–\-]+", token))
+    if numeric / len(tokens) > 0.35:
+        return True
+    return bool(
+        re.search(r"\bNo\.\s+at\s+Risk\b|\bdays\s+since\s+randomi[sz]ation\b", text, re.I)
+    )
 
 
 def _outcome_name(text: str) -> str:
     """Best-effort label for a result sentence."""
     match = re.search(
         r"\b(?:primary|secondary|safety)\s+(?:outcome|endpoint|end\s+point)s?\b"
-        r"(?:\s*(?:of|was|were|,))?\s*([^,.;()]{3,80})",
+        r"(?:\s*(?:of|was|were|,|:))?\s*([^,.;()]{3,80})",
         text,
         re.IGNORECASE,
     )
     if match and match.group(1).strip():
-        return match.group(1).strip()
+        return _trim_clause(_OPENER.sub("", match.group(1).strip())) or match.group(1).strip()
+    died = re.search(r"\bdied\s+(within|by|at)\s+(\d+\s+(?:days?|weeks?|months?|years?))", text, re.I)
+    if died:
+        return f"Mortality {died.group(1).lower()} {died.group(2)}"
+    noun = _OUTCOME_NOUN.search(text)
+    if noun:
+        return noun.group(0).strip()
     match = re.search(
         r"\b(?:incidence|rate|risk|frequency|prevalence|mortality|survival|"
         r"change|reduction|improvement)\s+(?:of|in)\s+([^,.;()]{3,70})",
@@ -610,81 +817,164 @@ def _outcome_name(text: str) -> str:
     )
     if match:
         return match.group(0).strip()
-    clause = re.split(r"[,;(]", text, maxsplit=1)[0]
+    clause = re.split(r"[,;(]", _OPENER.sub("", text), maxsplit=1)[0]
     return clause.strip()[:90] or "reported outcome"
 
 
+def _measure_key(measure: str | None) -> str:
+    if not measure:
+        return ""
+    lowered = measure.lower()
+    for short, long in (("hr", "hazard ratio"), ("rr", "risk ratio"), ("or", "odds ratio"),
+                        ("md", "mean difference")):
+        if lowered == short:
+            return long
+    return lowered
+
+
 def extract_outcomes(sentences: Sequence[Sentence], limit: int = 6) -> list[dict]:
-    """Pull statistically-reported results out of Results/Abstract."""
-    found: list[dict] = []
-    seen: set = set()
+    """Pull statistically-reported results out of Results/Abstract.
+
+    One result is reported up to three times in a paper -- abstract, results
+    text, figure label -- so rows are keyed on the statistic itself (measure,
+    estimate, interval) and merged: the merged row keeps the most informative
+    label (primary beats secondary) and the cleanest quote.
+    """
+    rows: dict[tuple, dict] = {}
+    order: list[tuple] = []
 
     for sentence in _ordered(sentences, RESULTS_FIRST):
-        text = sentence.text
-        effect = _EFFECT.search(text)
-        ci = _CI.search(text)
-        p_value = _P_VALUE.search(text)
-        percent = _PERCENT_PAIR.search(text)
-
-        signals = sum(bool(x) for x in (effect, ci, p_value, percent))
-        if signals < 2:
-            continue  # one lonely number is not a reported result
-
-        key = re.sub(r"\s+", " ", text)[:80].lower()
-        if key in seen:
+        if _is_figure_noise(sentence.text):
             continue
-        seen.add(key)
+        for text in _result_fragments(sentence.text):
+            _absorb_result(text, sentence.text, rows, order)
 
-        if _SAFETY_CUE.search(text):
-            kind = "safety"
-        elif _PRIMARY_CUE.search(text):
-            kind = "primary"
-        else:
-            kind = "secondary"
+    found = [rows[key] for key in order][: limit]
+    # CONSORT abstracts report the primary outcome first and often never use
+    # the word "primary" beside it. When nothing is labelled primary, the first
+    # whole-trial result (not a subgroup, not safety) takes the label -- with a
+    # confidence cap, since this is a convention rather than a statement.
+    if found and not any(item["kind"] == "primary" for item in found):
+        headline = next((item for item in found if item["kind"] == "secondary"), None)
+        if headline is not None:
+            headline["kind"] = "primary"
+            headline["confidence"] = min(headline["confidence"], 0.7)
+    priority = {"primary": 0, "safety": 1, "secondary": 2, "subgroup": 3}
+    found.sort(key=lambda item: priority.get(item["kind"], 4))
+    return found
 
-        direction = None
-        if p_value:
-            try:
-                threshold = float(p_value.group(2))
-                operator = p_value.group(1)
-                if operator in ("<", "≤") and threshold <= 0.05:
-                    direction = "favours_intervention"
-                elif operator in (">", "≥") or threshold > 0.05:
-                    direction = "no_difference"
-            except ValueError:
-                pass
-        if re.search(r"\bno\s+(?:significant\s+)?difference\b", text, re.IGNORECASE):
+
+def _result_fragments(text: str) -> list[str]:
+    """One sentence, several results: "... among A (rate ratio, 0.64; ...) and
+    among B (rate ratio, 0.82; ...) but not among C (rate ratio, 1.19; ...)".
+
+    Splitting on the clause joins keeps each estimate with its own subgroup and
+    interval; the row's quote stays the whole sentence, which is what grounds.
+    """
+    if len(_EFFECT.findall(text)) < 2:
+        return [text]
+    parts = re.split(r"\)\s*,?\s+(?:and|but(?:\s+not)?)\s+(?=among|in\b)", text)
+    return parts if len(parts) > 1 else [text]
+
+
+def _absorb_result(text: str, quote: str, rows: dict, order: list) -> None:
+    """Score one result fragment and merge it into ``rows`` (keyed on the statistic)."""
+    effect = _EFFECT.search(text)
+    ci = _CI.search(text)
+    p_value = _P_VALUE.search(text)
+    percent = _PERCENT_PAIR.search(text)
+
+    signals = sum(bool(x) for x in (effect, ci, p_value, percent))
+    if signals < 2:
+        return  # one lonely number is not a reported result
+
+    subgroup = None
+    subgroup_match = _SUBGROUP.search(text)
+    if _SUBGROUP_WORD.search(text) or (subgroup_match and not _PRIMARY_CUE.search(text)):
+        subgroup = subgroup_match.group(1).strip() if subgroup_match else "subgroup"
+
+    if _SAFETY_CUE.search(text):
+        kind = "safety"
+    elif _PRIMARY_CUE.search(text):
+        kind = "primary"
+    elif subgroup:
+        kind = "subgroup"
+    else:
+        kind = "secondary"
+
+    direction = None
+    if p_value:
+        try:
+            threshold = float(p_value.group(2))
+            operator = p_value.group(1)
+            if operator in ("<", "≤") and threshold <= 0.05:
+                direction = "favours_intervention"
+            elif operator in (">", "≥") or threshold > 0.05:
+                direction = "no_difference"
+        except ValueError:
+            pass
+    if re.search(r"\bno\s+(?:significant\s+)?difference\b|\bno\s+clear\s+effect\b", text, re.I):
+        direction = "no_difference"
+    if ci and direction is None and effect and _measure_key(effect.group(1)).endswith("ratio"):
+        low, high = float(ci.group(1)), float(ci.group(2))
+        if low <= 1.0 <= high:
             direction = "no_difference"
 
-        confidence = min(0.9, 0.45 + 0.15 * signals)
-        found.append(
-            {
-                "name": _outcome_name(text),
-                "kind": kind,
-                "measure": effect.group(1) if effect else ("percentage" if percent else None),
-                "effect_size": (
-                    effect.group(2)
-                    if effect
-                    else (f"{percent.group(1)}% vs {percent.group(2)}%" if percent else None)
-                ),
-                "confidence_interval": (
-                    f"95% CI {ci.group(1)} to {ci.group(2)}" if ci else None
-                ),
-                "p_value": (
-                    f"p {p_value.group(1)} {p_value.group(2)}" if p_value else None
-                ),
-                "direction": direction,
-                "quote": text,
-                "confidence": confidence,
-            }
-        )
-        if len(found) >= limit:
-            break
+    measure = effect.group(1) if effect else ("percentage" if percent else None)
+    estimate = (
+        effect.group(2)
+        if effect
+        else (f"{percent.group(1)}% vs {percent.group(2)}%" if percent else None)
+    )
+    interval = f"95% CI {ci.group(1)} to {ci.group(2)}" if ci else None
+    name = _outcome_name(text)
+    if kind == "subgroup" and subgroup:
+        name = subgroup[:1].upper() + subgroup[1:]
 
-    # Primary results first, then safety, then the rest.
-    priority = {"primary": 0, "safety": 1, "secondary": 2}
-    found.sort(key=lambda item: priority.get(item["kind"], 3))
-    return found
+    row = {
+        "name": name,
+        "kind": kind,
+        "measure": measure,
+        "effect_size": estimate,
+        "confidence_interval": interval,
+        "p_value": f"p {p_value.group(1)} {p_value.group(2)}" if p_value else None,
+        "direction": direction,
+        "quote": quote,
+        "confidence": min(0.9, 0.45 + 0.15 * signals),
+    }
+
+    key = (_measure_key(measure), estimate, ci.group(1) if ci else None)
+    existing = rows.get(key)
+    if existing is None:
+        # Same estimate, but one copy lost its interval to a line break:
+        # still the same result.
+        loose = next(
+            (k for k in order if k[0] == key[0] and k[1] == key[1]
+             and (k[2] is None or key[2] is None)),
+            None,
+        )
+        if loose is not None:
+            key, existing = loose, rows[loose]
+    if existing is None:
+        rows[key] = row
+        order.append(key)
+        return
+
+    # Merge into the copy we already hold.
+    rank = {"primary": 0, "safety": 1, "subgroup": 2, "secondary": 3}
+    if rank[row["kind"]] < rank[existing["kind"]]:
+        # The better-labelled copy also carries the quote that justifies
+        # the label.
+        existing["kind"] = row["kind"]
+        existing["name"] = row["name"]
+        existing["quote"] = row["quote"]
+    elif row["kind"] == existing["kind"] and len(row["quote"]) < len(existing["quote"]):
+        existing["quote"] = row["quote"]
+    for field in ("confidence_interval", "p_value", "direction"):
+        if not existing.get(field) and row.get(field):
+            existing[field] = row[field]
+    existing["confidence"] = max(existing["confidence"], row["confidence"])
+
 
 
 #: Field path -> extractor.  ``pipeline`` walks this table for both the offline

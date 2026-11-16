@@ -3,62 +3,65 @@
 /**
  * The evidence table — the product's main surface.
  *
- * Design rule: a blank cell must look *deliberate*. Most extraction UIs render
- * a missing field as an empty string, which reads as a bug and quietly trains
- * the user to distrust the blanks rather than the answers. Here every row that
- * has no value shows why it has no value, in the same visual weight as a value.
- *
- * Second rule: no number without its evidence. Clicking a row scrolls the
- * source reader to the exact sentence, so verifying a cell is one click, not a
- * search through the PDF.
+ * Design rules:
+ * 1. A blank cell must look *deliberate*. Every row without a value says why,
+ *    in the same visual weight as a value, so the reader learns to trust the
+ *    blanks rather than suspect them.
+ * 2. No number without its evidence. Selecting a row focuses the source reader
+ *    on the exact sentence, so verifying a cell is one click.
+ * 3. A machine answer is a draft until a person has checked it. Each answered
+ *    row carries a verification toggle; the page header counts them.
  */
 
-import { useState } from "react";
-
-import { FIELD_GROUPS, FIELD_LABELS, explainAbstention, fieldAt, percent, tierFor } from "@/lib/format";
-import type { EvidenceReview, EvidenceSpan } from "@/lib/types";
+import { CheckIcon } from "@/components/Icons";
+import { FIELD_GROUPS, FIELD_LABELS, explainAbstention, fieldAt } from "@/lib/format";
+import type { EvidenceReview } from "@/lib/types";
 
 interface Props {
   review: EvidenceReview | null;
   confidence: Record<string, number> | null;
   abstentions: Record<string, string> | null;
-  spans: EvidenceSpan[];
   activeField: string | null;
   onSelectField: (path: string | null) => void;
+  verified: Set<string>;
+  onToggleVerified: (path: string) => void;
 }
 
 export function EvidenceTable({
   review,
   confidence,
   abstentions,
-  spans,
   activeField,
   onSelectField,
+  verified,
+  onToggleVerified,
 }: Props) {
-  const spanByField = new Map(spans.map((span) => [span.field_path, span]));
-
+  let index = 0;
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col">
       {FIELD_GROUPS.map((group) => (
-        <section key={group.title} className="card overflow-hidden">
-          <div className="card-header">
-            <h3 className="text-sm font-semibold text-ink-900">{group.title}</h3>
-            <p className="text-[11px] text-ink-400">{group.hint}</p>
+        <section key={group.title} aria-label={group.title}>
+          <div className="flex items-baseline justify-between px-3.5 pb-1 pt-3">
+            <h3 className="eyebrow font-sans">{group.title}</h3>
+            <span className="hidden text-[11.5px] text-ink-400 sm:inline">{group.hint}</span>
           </div>
-          <div>
-            {group.paths.map((path) => (
+          {group.paths.map((path) => {
+            index += 1;
+            return (
               <Row
                 key={path}
                 path={path}
                 review={review}
                 score={confidence?.[path]}
                 reason={abstentions?.[path]}
-                span={spanByField.get(path)}
                 active={activeField === path}
+                verified={verified.has(path)}
+                delay={120 + index * 35}
                 onSelect={onSelectField}
+                onToggleVerified={onToggleVerified}
               />
-            ))}
-          </div>
+            );
+          })}
         </section>
       ))}
     </div>
@@ -70,81 +73,77 @@ function Row({
   review,
   score,
   reason,
-  span,
   active,
+  verified,
+  delay,
   onSelect,
+  onToggleVerified,
 }: {
   path: string;
   review: EvidenceReview | null;
   score?: number;
   reason?: string;
-  span?: EvidenceSpan;
   active: boolean;
+  verified: boolean;
+  delay: number;
   onSelect: (path: string | null) => void;
+  onToggleVerified: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const field = fieldAt(review, path);
-  const value = field?.value ?? null;
-  const tier = tierFor(score, Boolean(value));
+  const value = fieldAt(review, path)?.value ?? null;
+  const label = FIELD_LABELS[path] ?? path;
+
+  let chip: React.ReactNode = null;
+  if (review && value) {
+    const strong = (score ?? 0) >= 0.7;
+    chip = (
+      <span className={strong ? "chip-grounded" : "chip-partial"}>
+        {score !== undefined ? `${Math.round(score * 100)}%` : "—"}
+      </span>
+    );
+  } else if (review) {
+    chip = <span className="chip-abstained">Withheld</span>;
+  }
 
   return (
     <div
-      className={`table-row px-5 py-3 transition-colors ${
-        active ? "bg-accent-soft" : "hover:bg-ink-50"
-      }`}
+      data-active={active}
+      className="select-row grid animate-rise grid-cols-[minmax(0,1fr)_auto_32px] items-center gap-3 py-[3px] pr-1.5"
+      style={{ animationDelay: `${delay}ms` }}
     >
-      <div className="flex items-start gap-4">
-        <div className="w-40 shrink-0 pt-0.5 text-xs font-medium text-ink-500">
-          {FIELD_LABELS[path] ?? path}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          {value ? (
-            <button
-              type="button"
-              onClick={() => {
-                onSelect(active ? null : path);
-                setExpanded((current) => !current);
-              }}
-              className="block w-full text-left text-sm leading-relaxed text-ink-900"
-              title="Show the supporting sentence in the source"
-            >
-              {value}
-            </button>
-          ) : (
-            <p className="text-sm italic text-ink-400">
-              {reason ? explainAbstention(reason) : "Not extracted."}
-            </p>
-          )}
-
-          {expanded && span && (
-            <figure className="mt-2 animate-fade-in">
-              <blockquote className="quote">“{span.quote}”</blockquote>
-              <figcaption className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-ink-400">
-                <span>section: {span.section_name}</span>
-                {span.page_no && <span>page {span.page_no}</span>}
-                <span>
-                  chars {span.char_start.toLocaleString()}–{span.char_end.toLocaleString()}
-                </span>
-                <span>
-                  quote match {percent(span.match_score, 1)}
-                  {span.match_score === 1 ? " (verbatim)" : ""}
-                </span>
-              </figcaption>
-            </figure>
-          )}
-        </div>
-
-        <div className="w-24 shrink-0 text-right">
-          {value ? (
-            <span className={tier === "grounded" ? "chip-grounded" : "chip-partial"}>
-              {percent(score)}
-            </span>
-          ) : (
-            <span className="chip-abstained">withheld</span>
-          )}
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={() => onSelect(active ? null : path)}
+        aria-pressed={active}
+        className="grid grid-cols-1 items-center gap-1 rounded-[14px] py-2 pl-3.5 text-left sm:grid-cols-[136px_minmax(0,1fr)] sm:gap-3.5"
+      >
+        <span className="text-[12.5px] font-medium text-ink-500">{label}</span>
+        {value ? (
+          <span className="text-sm leading-[1.45] text-ink-900">{value}</span>
+        ) : (
+          <span className="text-[13.5px] leading-[1.45] text-ink-400">
+            {review === null ? "Not run yet." : reason ? explainAbstention(reason) : "Not extracted."}
+          </span>
+        )}
+      </button>
+      <span>{chip}</span>
+      {review && value ? (
+        <button
+          type="button"
+          onClick={() => onToggleVerified(path)}
+          aria-pressed={verified}
+          aria-label={`${verified ? "Unmark" : "Mark"} ${label} as verified`}
+          title={verified ? "Verified by you" : "Mark as verified against the source"}
+          className={`flex h-7 w-7 items-center justify-center rounded-[9px] transition-[background-color,box-shadow,transform] duration-300 ease-calm active:scale-90 ${
+            verified
+              ? "bg-grounded text-white"
+              : "bg-white text-ink-300 shadow-[inset_0_0_0_1.5px_#D5DAE3] hover:text-grounded"
+          }`}
+        >
+          <CheckIcon size={13} />
+        </button>
+      ) : (
+        <span />
+      )}
     </div>
   );
 }

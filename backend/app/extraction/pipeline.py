@@ -234,7 +234,13 @@ class ExtractionPipeline:
 
         for path, value, quote, self_reported in iter_grounded_items(review):
             if not value:
-                abstentions[path] = "not_reported"
+                # A model reading the evidence can judge that the paper is
+                # silent; a regex that failed to fire cannot.  Saying "the paper
+                # does not report this" on a rule miss is a false statement
+                # about the paper, so the rule engine gets the weaker reason.
+                abstentions[path] = (
+                    "not_found" if result.provider == "offline" else "not_reported"
+                )
                 continue
 
             if not quote:

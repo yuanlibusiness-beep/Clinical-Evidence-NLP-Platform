@@ -2,9 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted so the UI renders identically offline and where Google Fonts is
+   unreachable. Both families are SIL OFL 1.1 — licences in /public/fonts. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-wght.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/fonts/manrope-latin-wght.woff2") format("woff2-variations");
+}
+
 @layer base {
   :root {
     color-scheme: light;
+    --ease-calm: cubic-bezier(.16, 1, .3, 1);
   }
 
   html {
@@ -12,92 +31,168 @@
   }
 
   body {
-    @apply bg-ink-50 text-ink-800 antialiased;
+    @apply bg-canvas font-sans text-ink-900 antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
   }
 
   ::selection {
-    @apply bg-accent-soft text-ink-900;
+    @apply bg-accent-mark text-accent-ink;
   }
 
   /* Visible focus everywhere — the evidence table is keyboard-navigated. */
   :focus-visible {
-    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-ink-50;
+    @apply outline-none;
+    box-shadow: 0 0 0 2px #3554D1, 0 0 0 6px rgba(53, 84, 209, .15);
+    border-radius: 10px;
   }
 }
 
 @layer components {
-  .card {
-    @apply rounded-xl border border-ink-200 bg-white shadow-sm;
+  /* ---------------------------------------------------------------- surfaces */
+  .surface {
+    @apply rounded-3xl bg-white shadow-card;
   }
 
-  .card-header {
-    @apply flex items-baseline justify-between gap-3 border-b border-ink-100 px-5 py-3;
+  .surface-flat {
+    @apply rounded-2.5xl bg-white shadow-hairline;
   }
 
+  /* ----------------------------------------------------------------- buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2
-           text-sm font-medium transition-colors disabled:cursor-not-allowed
-           disabled:opacity-50;
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-[13px] px-[18px]
+           text-[13.5px] font-semibold transition-[transform,box-shadow,background-color,color]
+           duration-300 ease-calm disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-indigo-700;
+    @apply btn bg-accent text-white hover:-translate-y-0.5 hover:shadow-cta;
+  }
+
+  .btn-dark {
+    @apply btn bg-ink-900 text-white hover:-translate-y-0.5
+           hover:shadow-[0_12px_24px_-10px_rgba(17,24,39,.5)];
   }
 
   .btn-secondary {
-    @apply btn border border-ink-300 bg-white text-ink-700 hover:bg-ink-100;
+    @apply btn bg-white text-ink-900 shadow-[0_0_0_1px_#E4E7EE] hover:bg-ink-150;
   }
 
   .btn-ghost {
-    @apply btn text-ink-600 hover:bg-ink-100;
+    @apply btn h-9 px-3 text-ink-600 hover:bg-ink-150 hover:text-ink-900;
   }
 
+  /* ------------------------------------------------------------------ inputs */
   .input {
-    @apply w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm
-           text-ink-900 placeholder:text-ink-400 focus:border-accent;
+    @apply h-12 w-full rounded-xl border-0 bg-[#F4F6FA] px-4 text-[15px] text-ink-900
+           transition-[box-shadow,background-color] duration-300 placeholder:text-ink-400
+           focus:bg-white focus:shadow-focus focus:outline-none;
   }
 
   .label {
-    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500;
+    @apply flex flex-col gap-[7px] text-[13px] font-medium text-ink-700;
   }
 
+  /* ------------------------------------------------------------------- chips */
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-[9px] py-[3px]
+           text-[11.5px] font-semibold;
   }
 
-  /* The three epistemic states the whole UI is built around. */
   .chip-grounded {
-    @apply chip bg-grounded-soft text-teal-800;
+    @apply chip bg-grounded-soft text-grounded-ink;
   }
 
   .chip-partial {
-    @apply chip bg-partial-soft text-amber-800;
+    @apply chip bg-partial-soft text-partial-ink;
   }
 
   .chip-abstained {
-    @apply chip bg-abstained-soft text-ink-500;
+    @apply chip bg-abstained-soft text-abstained-ink;
   }
 
-  .quote {
-    @apply border-l-2 border-grounded-ring bg-ink-50 px-3 py-2 text-[13px]
-           leading-relaxed text-ink-600;
+  .chip-accent {
+    @apply chip bg-accent-soft text-accent-strong;
   }
 
-  .table-row {
-    @apply border-b border-ink-100 last:border-0;
+  .chip-outline {
+    @apply chip bg-white font-medium text-ink-500 shadow-hairline;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.07em] text-ink-500;
   }
 
   .skeleton {
-    @apply animate-pulse-soft rounded bg-ink-200;
+    @apply animate-breathe rounded-xl bg-ink-150;
+  }
+
+  /* ------------------------------------------------------- motion utilities */
+  .rise {
+    @apply animate-rise;
+  }
+
+  /* A row in a selectable list: lifts on hover, slides in when selected. */
+  .select-row {
+    @apply rounded-[14px] transition-[background-color,transform] duration-300 ease-calm
+           hover:bg-[#F4F6FB];
+  }
+
+  .select-row[data-active="true"] {
+    @apply translate-x-1 bg-accent-soft;
+  }
+
+  /* Cited sentences in the source reader. The reader dims everything except
+     the passage cited by the selected field, so the eye lands on it. */
+  .cite {
+    @apply cursor-pointer rounded-md px-[3px] py-[2px] transition-[opacity,background-color,color]
+           duration-500;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    background-color: rgba(53, 84, 209, .07);
+  }
+
+  .cite[data-active="true"] {
+    @apply bg-accent-mark text-accent-ink;
+  }
+
+  .reader[data-focus="true"] .plain,
+  .reader[data-focus="true"] .cite[data-active="false"] {
+    opacity: .42;
+  }
+
+  .plain {
+    @apply transition-opacity duration-500;
+  }
+
+  /* Hand-drawn marker sweep (login hero). */
+  .marker {
+    @apply animate-mark rounded-md px-[3px] text-accent-ink;
+    background-image: linear-gradient(#E8EDFF, #E8EDFF);
+    background-repeat: no-repeat;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
   }
 }
 
-/* The highlighted evidence span inside the source reader. */
-.evidence-highlight {
-  @apply rounded bg-partial-soft px-0.5 ring-1 ring-partial-ring;
+/* KPI rings draw in from empty (r = 28, circumference ≈ 176). */
+@keyframes ring-in {
+  from {
+    stroke-dashoffset: 176;
+  }
 }
 
-.evidence-highlight-active {
-  @apply rounded bg-grounded-soft px-0.5 ring-2 ring-grounded;
-  scroll-margin-top: 6rem;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

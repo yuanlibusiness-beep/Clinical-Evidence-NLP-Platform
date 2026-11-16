@@ -85,7 +85,7 @@ export interface ExtractedField {
 
 export interface Outcome {
   name: string;
-  kind: "primary" | "secondary" | "safety";
+  kind: "primary" | "secondary" | "safety" | "subgroup";
   measure: string | null;
   effect_size: string | null;
   confidence_interval: string | null;
